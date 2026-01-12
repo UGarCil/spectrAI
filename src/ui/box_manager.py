@@ -39,7 +39,7 @@ class BoxManager:
         Remove a bounding box by ID.
         
         Args:
-            box_id (str): The ID of the box to remove
+            box_id (str): A unique identifier of the boxes
             
         Returns:
             bool: True if box was removed, False if box_id not found

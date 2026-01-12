@@ -13,8 +13,6 @@ and business logic (box creation and storage).
 Module Contents:
     - CanvasWidget: Main widget class for annotation canvas
     
-Author: spectrAI Project
-Version: 1.0.0
 """
 
 from PyQt5.QtWidgets import QLabel
@@ -448,51 +446,57 @@ class CanvasWidget(QLabel):
         
         Notes:
             - Only responds to left mouse button (Qt.LeftButton)
-            - Returns immediately unless config["MODE"] == "BOX"
+            - In ERASE mode: deletes the clicked box
+            - In BOX mode: two-click box creation
             - Returns silently if click outside image bounds
             - Minimum box size is 5x5 pixels to prevent accidental tiny boxes
-            - No error checking for ImageManager being set (relies on caller)
         """
-        # Respect global interaction mode; cancel in-progress preview if mode changed
-        if config.get("MODE") != "BOX":
+        if event.button() != Qt.LeftButton:
+            return
+        
+        current_mode = config.get("MODE")
+        
+        # ==================== ERASE MODE: Click to Delete ====================
+        if current_mode == "ERASE":
+            # Find box under cursor using existing helper
+            idx, clicked_box = self._get_box_at_position(event.pos())
+            
+            if clicked_box:
+                box_id = clicked_box.box_id
+                self.box_manager.remove_box(box_id)
+                self.box_deleted.emit(box_id)
+                self.update()
+            return
+        
+        # ==================== BOX MODE ====================
+        # Cancel in-progress preview if mode is not BOX
+        if current_mode != "BOX":
             if self.is_box_started:
                 self.is_box_started = False
                 self.update()
             return
 
-        if event.button() != Qt.LeftButton:
-            return
-        
         if not self.is_mouse_in_image(event.pos()):
             return
         
         if not self.is_box_started:
             # ==================== FIRST CLICK ====================
-            # Attempt to select existing box at click position
-            clicked_box = self._get_box_at_position(event.pos())
             
-            if clicked_box:
-                # User clicked on existing box - select it
-                for box in self.box_manager.get_all_boxes():
-                    box.status = (box is clicked_box)
-                self.selected_box_id = clicked_box.box_id
-                self.update()
-            else:
-                # User clicked on empty space - start new box
-                # Convert initial click to IMAGE coordinates to keep preview consistent
-                img_coords = self.screen_to_image_coords(event.pos().x(), event.pos().y())
-                if img_coords is None:
-                    return
-                self.is_box_started = True
-                self.anchor_x, self.anchor_y = img_coords
-                self.current_mouse_x, self.current_mouse_y = img_coords
-                
-                # Deselect any previously selected box
-                for box in self.box_manager.get_all_boxes():
-                    box.status = False
-                self.selected_box_id = None
-                
-                self.update()
+            # User clicked on empty space - start new box
+            # Convert initial click to IMAGE coordinates to keep preview consistent
+            img_coords = self.screen_to_image_coords(event.pos().x(), event.pos().y())
+            if img_coords is None:
+                return
+            self.is_box_started = True
+            self.anchor_x, self.anchor_y = img_coords
+            self.current_mouse_x, self.current_mouse_y = img_coords
+            
+            # Deselect any previously selected box
+            for box in self.box_manager.get_all_boxes():
+                box.status = False
+            self.selected_box_id = None
+            
+            self.update()
         else:
             # ==================== SECOND CLICK ====================
             # Finalize the box with anchor and current position as corners
@@ -577,7 +581,22 @@ class CanvasWidget(QLabel):
             - Does nothing if ImageManager not set or no box in progress
             - Mouse tracking must be enabled for this to work (set in __init__)
         """
-        if config.get("MODE") != "BOX":
+        current_mode = config.get("MODE")
+        
+        # ==================== ERASE MODE: Hover Detection ====================
+        if current_mode == "ERASE":
+            # Find box under cursor using existing helper
+            _,hovered_box = self._get_box_at_position(event.pos())
+            
+            # Update all boxes: only the hovered one gets status=True (green)
+            for box in self.box_manager.get_all_boxes():
+                box.status = (box is hovered_box)
+            
+            self.update()
+            return
+        
+        # ==================== BOX MODE: Preview Update ====================
+        if current_mode != "BOX":
             return
         if not self.is_box_started:
             return
@@ -810,19 +829,18 @@ class CanvasWidget(QLabel):
         
         # Check boxes in reverse order for proper visual layering
         # (last-added box is on top)
-        for box in reversed(self.box_manager.get_all_boxes()):
+        for idx,box in enumerate(self.box_manager.get_all_boxes()):
             # Convert box corners from image coordinates to screen coordinates
             screen_x, screen_y = self.image_to_screen_coords(box.x, box.y)
             screen_x2, screen_y2 = self.image_to_screen_coords(
                 box.x + box.width,
                 box.y + box.height
             )
-            
             # Check if point is within box bounds
             if screen_x <= x <= screen_x2 and screen_y <= y <= screen_y2:
-                return box
+                return idx,box
         
-        return None
+        return None, None
     
     # =====================================================================
     # Public Interface Methods

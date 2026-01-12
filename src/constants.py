@@ -26,6 +26,7 @@ config = {
     "MODEL_PATHS": [],
     "LABELS": [],
     "MODE": "BOX",
+    "CURRENT_LABEL": 0
 }
 
 

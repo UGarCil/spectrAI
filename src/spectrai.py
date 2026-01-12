@@ -47,8 +47,14 @@ class App(QMainWindow):
         self.ui.prevBtn.clicked.connect(lambda: self.change_image('-'))
         self.ui.nextBtn.clicked.connect(lambda: self.change_image('+'))
         self.ui.editBtn.setCheckable(True)
-        self.ui.editBtn.setChecked(True)
+        self.ui.editBtn.setChecked(False)
         self.ui.editBtn.toggled.connect(self.on_edit_mode_toggled)
+        
+        # Setup trash button (ERASE mode) - checkable toggle
+        self.ui.trashBtn.setCheckable(True)
+        self.ui.trashBtn.setChecked(False)
+        self.ui.trashBtn.toggled.connect(self.on_erase_mode_toggled)
+        
         # preload the image manager
         self.image_manager = None
         self.model_manager = ModelManager()
@@ -391,22 +397,66 @@ class App(QMainWindow):
         self.ui.spectroPanel.set_labels(labels)
         print(f"Canvas labels updated with {len(labels)} labels")
 
+    def _set_button_checked_silent(self, button, checked: bool):
+        '''
+        Set a button's checked state without triggering its toggled signal.
+        
+        This is useful for maintaining mutual exclusivity between toggle buttons
+        without causing recursive signal emissions.
+        
+        Args:
+            button: The QPushButton (or similar checkable widget) to modify
+            checked (bool): The desired checked state
+        '''
+        button.blockSignals(True)
+        button.setChecked(checked)
+        button.blockSignals(False)
+
     def on_edit_mode_toggled(self, checked: bool):
         '''
-        Toggle interaction mode between drawing boxes and alternate modes.
-        When checked, sets mode to "BOX" enabling drawing on the canvas;
-        when unchecked, switches to "ERASE" (placeholder for future behavior).
+        Toggle interaction mode to BOX (drawing) mode.
+        When checked, sets mode to "BOX" enabling drawing on the canvas.
+        Ensures mutual exclusivity with ERASE mode.
         '''
-        config["MODE"] = "BOX" if checked else "ERASE"
-
+        if checked:
+            config["MODE"] = "BOX"
+            # Uncheck trash button (mutual exclusivity)
+            self._set_button_checked_silent(self.ui.trashBtn, False)
+            # Set crosshair cursor for drawing
+            self.ui.spectroPanel.setCursor(Qt.CrossCursor)
+        else:
+            # If unchecked and trash is not checked, stay in current mode
+            if not self.ui.trashBtn.isChecked():
+                self.ui.spectroPanel.setCursor(Qt.ArrowCursor)
         
-        # change cursor to indicate drawing vs neutral
-        self.ui.spectroPanel.setCursor(Qt.CrossCursor if config["MODE"] == "BOX" else Qt.ArrowCursor)
-
-        # cancel any in-progress preview when leaving BOX mode
+        # Cancel any in-progress preview when leaving BOX mode
         if config["MODE"] != "BOX" and self.ui.spectroPanel.is_box_started:
             self.ui.spectroPanel.is_box_started = False
             self.ui.spectroPanel.update()
+
+    def on_erase_mode_toggled(self, checked: bool):
+        '''
+        Toggle interaction mode to ERASE mode.
+        When checked, sets mode to "ERASE" enabling deletion of boxes by clicking.
+        Ensures mutual exclusivity with BOX mode.
+        '''
+        if checked:
+            config["MODE"] = "ERASE"
+            # Uncheck edit button (mutual exclusivity)
+            self._set_button_checked_silent(self.ui.editBtn, False)
+            # Start with arrow cursor - will change to hand when hovering boxes
+            self.ui.spectroPanel.setCursor(Qt.ArrowCursor)
+            # Cancel any in-progress box drawing
+            if self.ui.spectroPanel.is_box_started:
+                self.ui.spectroPanel.is_box_started = False
+                self.ui.spectroPanel.update()
+        else:
+            # Clear hover state when leaving erase mode
+            # TODO: self.ui.spectroPanel.hovered_box_id = None
+            self.ui.spectroPanel.update()
+            # If unchecked and edit is not checked, set neutral cursor
+            if not self.ui.editBtn.isChecked():
+                self.ui.spectroPanel.setCursor(Qt.ArrowCursor)
 
 
 if __name__ == "__main__":

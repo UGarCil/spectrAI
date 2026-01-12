@@ -7,7 +7,7 @@ in image-relative coordinates, and BoxManager which manages collections of bound
 
 from PyQt5.QtGui import QPen, QColor, QFont
 from PyQt5.QtCore import QRect
-
+import uuid
 
 class BoundingBox:
     """
@@ -34,7 +34,7 @@ class BoundingBox:
         self.width = width
         self.height = height
         self.label_id = label_id
-        self.box_id = box_id
+        self.box_id = box_id if box_id is not None else str(uuid.uuid4())
         self.status = False  # True if selected, False otherwise
     
     def get_bounds(self) -> tuple:
