@@ -2,6 +2,7 @@
 
 from ui.main_ui import Ui_MainWindow
 from ui.canvas_widget import CanvasWidget
+from ui.label_editor_dialog import LabelEditorDialog
 from tools.image_loader import ImageManager
 from PyQt5 import QtWidgets
 from PyQt5.QtCore import Qt
@@ -231,6 +232,8 @@ class App(QMainWindow):
             edit_button.setText("")
             edit_button.setIcon(self.icon_editLabel)
             edit_button.setObjectName(f"editButton_{i}")
+            # Connect edit button - pass the label_button reference directly
+            edit_button.clicked.connect(lambda checked, btn=label_button, idx=i: self.on_edit_label_clicked(btn,idx))
             label_layout.addWidget(edit_button)
             
             # Set stretch to make label button take more space
@@ -270,6 +273,93 @@ class App(QMainWindow):
                         widget.setChecked(btn_index == index)
         
         print(f"Current label set to: {index} ({config['LABELS'][index]})")
+    
+    def on_edit_label_clicked(self, label_button: QPushButton, idx: int):
+        '''
+        Open the label editor dialog for editing or deleting a label.
+        
+        Args:
+            label_button (QPushButton): The label button to edit
+            idx (int): The index of the label in config["LABELS"]
+        '''
+        dialog = LabelEditorDialog(label_button, idx, self)
+        dialog.exec_()
+        
+        result = dialog.get_result()
+        
+        if result == "accept":
+            # Button text was already updated by the dialog
+            # Sync config["LABELS"] with the new name
+            new_name = label_button.text()
+            config["LABELS"][idx] = new_name
+            self.save_labels_to_yaml()
+            print(f"Label updated: config['LABELS'][{idx}] = '{new_name}'")
+            
+        elif result == "delete":
+            self.delete_label(idx)
+
+    def delete_label(self, idx: int):
+        '''
+        Delete a label at the given index.
+        
+        Updates config["LABELS"], rebuilds UI buttons, and saves to dataset.yaml.
+        
+        Args:
+            idx (int): The index of the label to delete
+        '''
+        if idx < 0 or idx >= len(config["LABELS"]):
+            return
+        
+        deleted_name = config["LABELS"].pop(idx)
+        
+        # Update CURRENT_LABEL if needed
+        if len(config["LABELS"]) == 0:
+            config["CURRENT_LABEL"] = 0
+        elif config["CURRENT_LABEL"] >= len(config["LABELS"]):
+            config["CURRENT_LABEL"] = len(config["LABELS"]) - 1
+        
+        # Rebuild UI (indices changed after deletion)
+        self.update_label_buttons()
+        
+        # Save to yaml
+        self.save_labels_to_yaml()
+        
+        print(f"Label '{deleted_name}' (index {idx}) deleted")
+
+    def save_labels_to_yaml(self):
+        '''
+        Save the current labels in config["LABELS"] to the dataset.yaml file.
+        
+        Returns:
+            bool: True if saved successfully, False otherwise
+        '''
+        if not config.get("ROOT"):
+            print("Warning: No project root set, cannot save labels")
+            return False
+        
+        dataset_yaml_path = os.path.join(config["ROOT"], "dataset.yaml")
+        
+        try:
+            # Read existing config
+            with open(dataset_yaml_path, 'r') as file:
+                dataset_config = yaml.safe_load(file)
+            
+            # Update names with current labels
+            names_dict = {i: name for i, name in enumerate(config["LABELS"])}
+            dataset_config['names'] = names_dict
+            dataset_config['nc'] = len(config["LABELS"])
+            
+            # Write back
+            with open(dataset_yaml_path, 'w') as file:
+                yaml.dump(dataset_config, file, default_flow_style=False, sort_keys=False)
+            
+            print(f"Labels saved to: {dataset_yaml_path}")
+            return True
+            
+        except Exception as e:
+            print(f"Error saving labels to YAML: {e}")
+            QMessageBox.warning(self, "Save Labels", f"Error saving labels: {str(e)}")
+            return False
     
     def clear_layout(self, layout):
         '''
