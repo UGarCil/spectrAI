@@ -82,6 +82,9 @@ class App(QMainWindow):
         self.on_edit_mode_toggled(True)
 
         self.ui.addBtn.clicked.connect(self.on_add_label_clicked)
+        self.ui.GoBtn.clicked.connect(self.on_go_btn_clicked)
+        
+        self.ui.ImageGoLineEd.returnPressed.connect(self.on_go_btn_clicked)
 
     
     def wrapper_default_downloader(self):
@@ -803,15 +806,25 @@ class App(QMainWindow):
             self.image_manager.render(self.ui.spectroPanel)
             # Load annotations for the new image
             self.load_annotations_for_current_image()
+            self.update_image_index_display()
     
-    def update_canvas_labels(self):
-        """
-        Update the canvas widget with current labels from config["LABELS"].
-        Should be called after loading labels from dataset.yaml.
-        """
-        labels = config.get("LABELS", [])
-        self.ui.spectroPanel.set_labels(labels)
-        print(f"Canvas labels updated with {len(labels)} labels")
+    def update_image_index_display(self):
+        """Show the current image index in the ImageGoLineEd field."""
+        if self.image_manager:
+            self.ui.ImageGoLineEd.setText(str(self.image_manager.current_index))
+
+    def go_to_image(self, idx: int):
+        """Navigate to a specific image index, saving and clearing as needed."""
+        if not config.get("PROJECT_LOADED", False):
+            return
+        self.save_current_annotations()
+        self.ui.spectroPanel.reset_for_new_image()
+        self.image_manager.current_index = idx
+        self.image_manager.render(self.ui.spectroPanel)
+        self.load_annotations_for_current_image()
+        config["CURRENT_IMAGE"] = idx
+        self.update_image_index_display()
+
 
     def _set_button_checked_silent(self, button, checked: bool):
         '''
@@ -929,6 +942,27 @@ class App(QMainWindow):
             config["LABELS"].append(new_name)
             self.update_label_buttons()
             self.save_labels_to_yaml()
+
+    def on_go_btn_clicked(self):
+        # Defensive: check if project is loaded and image_manager is initialized
+        if not config.get("PROJECT_LOADED", False) or self.image_manager is None:
+            QMessageBox.warning(self, "No Project", "Please load or create a project first.")
+            return
+        
+        total_images = len(self.image_manager.image_list)
+        if total_images == 0:
+            QMessageBox.warning(self, "No Images", "No images are loaded in the project.")
+            return
+
+        user_input = self.ui.ImageGoLineEd.text().strip()
+        try:
+            idx = int(user_input)
+        except ValueError:
+            QMessageBox.warning(self, "Invalid Input", "Please enter a valid integer image index.")
+            return
+
+        idx = max(0, min(idx, total_images - 1))
+        self.go_to_image(idx)
 
 if __name__ == "__main__":
     import sys
